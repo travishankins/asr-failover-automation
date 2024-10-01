@@ -1,0 +1,80 @@
+trigger: none # Manual or custom trigger
+
+pool:
+  name: 'MySelfHostedPool' # Use the same self-hosted agent pool or Azure-hosted agents
+
+steps:
+  # Step 1: ASR Failover from On-Premise to East US
+  - task: AzureCLI@2
+    inputs:
+      azureSubscription: 'MyAzureServiceConnection'
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        set -e
+
+        # Variables for On-Premise to East US failover
+        vaultName="MyOnPremRecoveryVault"
+        resourceGroupName="MyOnPremResourceGroup"
+        recoveryPlanName="OnPremToEastUSRecoveryPlan"
+        failoverDirection="PrimaryToRecovery"
+
+        # Trigger failover for on-premise VMs to East US
+        az recoveryservices replication-recoveryplan failover-unplanned \
+          --resource-group $resourceGroupName \
+          --vault-name $vaultName \
+          --name $recoveryPlanName \
+          --failover-direction $failoverDirection \
+          --provider-specific-details "HyperVReplicaAzure" || {
+            echo "Failover failed"
+            exit 1
+          }
+
+        echo "On-premise VMs failover to East US succeeded"
+
+  # Step 2: Retrieve DNS Credentials from Azure Key Vault
+  - task: AzureKeyVault@1
+    inputs:
+      azureSubscription: 'MyAzureServiceConnection'
+      KeyVaultName: 'MyKeyVault' # Replace with your Key Vault name
+      SecretsFilter: 'dns-username,dns-password' # Retrieve the relevant secrets
+      RunAsPreJob: true
+
+  # Step 3: DNS Update for On-Premise VMs in East US using Retrieved Credentials
+  - task: PowerShell@2
+    inputs:
+      targetType: 'inline'
+      script: |
+        # Retrieve secrets from environment variables
+        $dnsUsername = "$(dns-username)"  # The DNS username from Key Vault
+        $dnsPassword = "$(dns-password)"  # The DNS password from Key Vault
+
+        # Variables for DNS update
+        $dnsServer = "OnPremDNSServer"  # Replace with your DNS server hostname or IP
+        $zoneName = "mydomain.local"  # Your DNS zone (e.g., internal domain)
+        $recordName = "myapp"  # DNS record to update (e.g., myapp.mydomain.local)
+        $newIpAddress = "104.43.195.216"  # New Azure IP address after failover
+
+        # Update DNS A record using credentials
+        $secpasswd = ConvertTo-SecureString $dnsPassword -AsPlainText -Force
+        $credential = New-Object System.Management.Automation.PSCredential ($dnsUsername, $secpasswd)
+
+        # Command to update DNS (adjust this command as necessary for your environment)
+        Set-DnsServerResourceRecord -Name $recordName -ZoneName $zoneName -NewInputObject (Get-DnsServerResourceRecord -Name $recordName -ZoneName $zoneName -ComputerName $dnsServer | Where-Object { $_.RecordType -eq 'A' } | Set-DnsServerResourceRecordData -IPv4Address $newIpAddress) -ComputerName $dnsServer -Credential $credential
+
+        Write-Output "DNS A record for $recordName updated to $newIpAddress on $dnsServer"
+
+  # Step 4: Success Email Notification
+  - task: SendEmail@1
+    inputs:
+      subject: 'On-Premise Failover & DNS Update Completed'
+      body: 'Failover for recovery plan $recoveryPlanName (On-Premise to East US) and DNS update for $recordName completed successfully.'
+      to: 'recipient@example.com'
+
+  # Step 5: Failure Email Notification
+  - task: SendEmail@1
+    condition: failed() # This step runs only if the previous steps fail
+    inputs:
+      subject: 'On-Premise Failover to East US Failed'
+      body: 'The failover for recovery plan $recoveryPlanName (On-Premise to East US) has failed. Please check the logs for more details.'
+      to: 'recipient@example.com'

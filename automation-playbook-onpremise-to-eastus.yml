@@ -1,0 +1,32 @@
+# Workflow for Azure Automation Runbook
+# Azure Automation triggers the runbook, which uses SSH to connect to the VM where Ansible is installed.
+# The Ansible playbook uses the Azure DevOps REST API to trigger the pipeline by sending an HTTP POST request with the Personal Access Token.
+# The Azure DevOps pipeline runs the defined tasks, such as failover processes or DNS updates.
+
+---
+- name: Trigger Azure DevOps Pipeline from Ansible
+  hosts: localhost
+  tasks:
+    - name: Trigger Azure DevOps pipeline via REST API
+      uri:
+        url: 'https://dev.azure.com/{{ organization }}/{{ project }}/_apis/pipelines/{{ pipeline_id }}/runs?api-version=6.0-preview.1'
+        method: POST
+        headers:
+          Authorization: 'Basic {{ token }}'
+          Content-Type: 'application/json'
+        body: |
+          {
+            "resources": {
+              "repositories": {
+                "self": {
+                  "refName": "refs/heads/main"  # Specify the branch if needed
+                }
+              }
+            }
+          }
+        status_code: 201
+      vars:
+        organization: 'my-organization' # Replace with your Azure DevOps organization
+        project: 'my-project' # Replace with your project name
+        pipeline_id: '123' # Replace with your pipeline ID
+        token: "{{ lookup('env', 'AZDO_PAT') }}" # The Personal Access Token
