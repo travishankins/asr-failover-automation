@@ -34,6 +34,8 @@ Before setting up the failover automation, ensure the following prerequisites ar
 3. **Ansible Playbook**: Automates the failover process by triggering an Azure DevOps pipeline that runs the failover YAML configuration for the respective scenario.
 4. **Azure DevOps Pipeline**: Executes the YAML file, handling the failover of resources between environments (on-premise to East US or East US to Central US).
 
+![High-Level Architecture Diagram](images/architecture-diagram.png)
+
 ## Steps to Set Up
 
 ### 1. Set Up Azure Automation Account
