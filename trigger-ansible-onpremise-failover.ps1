@@ -1,10 +1,18 @@
-# This script uses SSH to run the Ansible playbook on the VM
-$vmUser = "azureuser"  # Replace with your VM username
-$vmIP = "X.X.X.X"      # Replace with the public IP address of your VM
-$sshKeyPath = "~/.ssh/mykey"  # Path to your SSH key file
+# Retrieve the SSH Username and Password from Key Vault using Managed Identity
+$vaultName = "MyKeyVault"
+$sshUsername = (Get-AzKeyVaultSecret -VaultName $vaultName -Name "ssh-username").SecretValueText
+$sshPassword = (Get-AzKeyVaultSecret -VaultName $vaultName -Name "ssh-password").SecretValueText
 
-# Command to run the Ansible playbook
-$ansibleCommand = "ansible-playbook /path/to/automation-playbook.yml"
+# Create a secure string for the password
+$secpasswd = ConvertTo-SecureString $sshPassword -AsPlainText -Force
+$credential = New-Object System.Management.Automation.PSCredential ($sshUsername, $secpasswd)
 
-# Run the playbook via SSH
-ssh -i $sshKeyPath $vmUser@$vmIP "$ansibleCommand"
+# SSH into the VM or Hybrid Worker using the retrieved credentials
+$vmIP = "X.X.X.X"
+$sshKeyPath = "~/.ssh/mykey"
+
+# Command to run the Ansible playbook for on-premise to East US failover
+$ansibleCommand = "ansible-playbook /path/to/automation-playbook-onpremise-to-eastus.yml"
+
+# Execute the playbook via SSH
+ssh -i $sshKeyPath $sshUsername@$vmIP "$ansibleCommand"
